@@ -1,6 +1,6 @@
 import time
 import itertools
-from random import Random, randint, uniform, sample
+from random import Random
 import pandas as pd
 import numpy as np
 from statistics import mean, median, stdev
@@ -104,10 +104,9 @@ def evaluate_population(population, backpack_df, capacity):
 # na eksperyment składa się 5 uruchomień z tymi samymi parametrami
 def evolve(pop_size, n_genes, backpack_df, capacity, rand,
            T, Pc, Pm,
-           selection_fn, cross_fn, mutation_fn,
-           elitism = True):
+           selection_fn, cross_fn, mutation_fn):
     population = generate_population(pop_size, n_genes, rand, backpack_df, capacity)
-    run_stats = []  # lista słowników z info per iteracja
+    run_stats = []
 
     for gen in range(T):
         stats = evaluate_population(population, backpack_df, capacity)
@@ -121,7 +120,7 @@ def evolve(pop_size, n_genes, backpack_df, capacity, rand,
         new_pop = []
         # dobieranie aż do wielkości populacji
         while len(new_pop) < pop_size:
-            parents = selection_fn(population, backpack_df, capacity, rand, k=2)
+            parents = selection_fn(population, backpack_df, capacity, rand, num_of_chosen=2)
             p1, p2 = parents[0][:], parents[1][:]
             # krzyżowanie z prawdopodobieństwem Pc
             if rand.random() < Pc:
@@ -147,7 +146,7 @@ def evolve(pop_size, n_genes, backpack_df, capacity, rand,
     }
 
 # Uruchomienie eksperymentów
-def run_experiments(backpack_csv, out_prefix,
+def run_experiments(backpack_csv, backpack_capacity, out_prefix,
                     Pc_list, Pm_list, N_list, T,
                     selection_methods, crossover_methods,
                     mutation_method,
@@ -183,6 +182,7 @@ def run_experiments(backpack_csv, out_prefix,
         mut_fn = mutation_map[mutation_method]
 
         best_vals = []
+        best_inds = []
         times = []
         # powtórzenia
         for r in range(repeats):
@@ -192,8 +192,7 @@ def run_experiments(backpack_csv, out_prefix,
             res = evolve(pop_size=N, n_genes=n_genes,
                          backpack_df=df, capacity=BACKPACK_CAPACITY,
                          rand=rand, T=T, Pc=Pc, Pm=Pm,
-                         selection_fn=sel_fn, cross_fn=cross_fn, mutation_fn=mut_fn,
-                         elitism=True)
+                         selection_fn=sel_fn, cross_fn=cross_fn, mutation_fn=mut_fn)
             elapsed = time.time() - start
             times.append(elapsed)
             best_vals.append(res["final_best_val"])
@@ -202,6 +201,8 @@ def run_experiments(backpack_csv, out_prefix,
             hist_df = pd.DataFrame(res["history"])
             hist_csv = f"{out_prefix}_hist_Pc{Pc}_Pm{Pm}_N{N}_sel{sel_name}_cross{cross_name}_run{r+1}.csv"
             hist_df.to_csv(hist_csv, index=False)
+
+            best_inds.append(res["final_best_ind"])
 
             # dodatkowy zapis - najlepsze rozwiązanie i jego przedmioty
             summary_rows.append({
@@ -214,7 +215,6 @@ def run_experiments(backpack_csv, out_prefix,
                 "crossover": cross_name,
                 "run": r+1,
                 "best_value": res["final_best_val"],
-                "best_mean": res["final_mean"],
                 "worst_value": res["final_worst_val"],
                 "time": elapsed
             })
@@ -228,7 +228,8 @@ def run_experiments(backpack_csv, out_prefix,
             "best_median": float(median(best_vals)),
             "best_min": float(min(best_vals)),
             "best_max": float(max(best_vals)),
-            "time_mean_s": float(mean(times))
+            "time_mean_s": float(mean(times)),
+            "best_solution": best_inds[int(np.argmax(best_vals))] 
         }
         print("Dane dla uruchomienia:", summary_stat)
 
@@ -241,17 +242,18 @@ if __name__ == "__main__":
     # Pc_list = [0.6, 0.8, 1.0]
     # Pm_list = [0.01, 0.05, 0.1]
     # N_list = [50, 100, 200]
-    Pc_list = [0.6, 0.8]
+    Pc_list = [0.6]
     Pm_list = [0.01, 0.05]
     N_list = [50]
     T = 100
 
-    selection_methods = ["roulette", "tournament"]
+    selection_methods = ["tournament"]
     crossover_methods = ["one_point", "two_point"]
     mutation_method = "bitflip"
 
     run_experiments(
         backpack_csv=BACKPACK_CSV,
+        backpack_capacity=BACKPACK_CAPACITY,
         out_prefix="results/plecak",
         Pc_list=Pc_list, Pm_list=Pm_list, N_list=N_list, T=T,
         selection_methods=selection_methods,

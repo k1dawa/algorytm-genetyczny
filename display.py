@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 def load_histories(folder: str):
-    files = glob.glob(f"{folder}/*hist*.csv")
+    files = glob.glob(f"{folder}/*Pc*.csv")
     rows = []
 
     pattern = re.compile(
@@ -72,16 +72,31 @@ def plot_convergence(df: pd.DataFrame):
 
 # ===================================================================================
 # Porównania Pc, Pm, N, selection, crossover
-# ===================================================================================
 def plot_param_effect(df_summary: pd.DataFrame, param: str):
-    plt.figure(figsize=(10, 6))
-    groups = df_summary.groupby(param)["best_value"].mean()
-    groups.plot(kind="bar")
+    import matplotlib.pyplot as plt
+    import numpy as np
 
-    plt.title(f"Wpływ parametru {param} na najlepszy wynik")
-    plt.ylabel("Średni best_value")
+    # agregacja: średnia i maksimum dla best_value
+    agg = df_summary.groupby(param)["best_value"].agg(["mean", "max"])
+    
+    # przygotowanie danych do wykresu
+    labels = agg.index.astype(str)
+    x = np.arange(len(labels))
+    width = 0.35
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.set_yscale("log")
+    ax.bar(x - width/2, agg["mean"], width, label="Średnia best_value")
+    ax.bar(x + width/2, agg["max"], width, label="Najlepsze best_value")
+
+    ax.set_title(f"Wpływ parametru {param} na wyniki algorytmu")
+    ax.set_ylabel("Wartość best_value")
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.legend()
     plt.tight_layout()
     plt.show()
+
 
 
 def plot_method_comparison(df_summary: pd.DataFrame, param: str):

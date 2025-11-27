@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 def load_histories(folder: str):
-    files = glob.glob(f"{folder}/*Pc*.csv")
+    files = glob.glob(f"{folder}/*hist*.csv")
     rows = []
 
     pattern = re.compile(
@@ -35,43 +35,28 @@ def load_histories(folder: str):
 
     return pd.concat(rows, ignore_index=True)
 
-
-# ===================================================================================
-# Wczytywanie summary
-# ===================================================================================
 def load_summary(path: str):
     df = pd.read_csv(path)
     return df
 
-
-# ===================================================================================
-# Wykres zmian najlepszego rozwiązania w czasie (średnia po runach)
-# ===================================================================================
-def plot_convergence(df: pd.DataFrame):
-    df_group = df.groupby(["generation"]).agg(
-        mean_best=("best_val", "mean"),
-        std_best=("best_val", "std")
+def plot_result_change_with_generations(df: pd.DataFrame):
+    df_group = df.groupby("generation").agg(
+        mean_best=("best_val", "mean")
     )
 
     plt.figure(figsize=(10, 6))
-    plt.plot(df_group.index, df_group["mean_best"], label="Średni best_val")
-    plt.fill_between(
-        df_group.index,
-        df_group["mean_best"] - df_group["std_best"].fillna(0),
-        df_group["mean_best"] + df_group["std_best"].fillna(0),
-        alpha=0.2,
-    )
+    plt.plot(df_group.index, df_group["mean_best"], label="Średnia najlepsza wartość")
 
-    plt.title("Zmiany najlepszego rozwiązania w czasie (średnia po runach)")
+    plt.title("Zmiany najlepszego rozwiązania w czasie")
     plt.xlabel("Generacja")
-    plt.ylabel("Best value")
+    plt.ylabel("Najlepsza wartość")
     plt.grid(True)
+    plt.legend()
     plt.tight_layout()
     plt.show()
 
 
-# ===================================================================================
-# Porównania Pc, Pm, N, selection, crossover
+
 def plot_param_effect(df_summary: pd.DataFrame, param: str):
     import matplotlib.pyplot as plt
     import numpy as np
@@ -86,26 +71,33 @@ def plot_param_effect(df_summary: pd.DataFrame, param: str):
 
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.set_yscale("log")
-    ax.bar(x - width/2, agg["mean"], width, label="Średnia best_value")
-    ax.bar(x + width/2, agg["max"], width, label="Najlepsze best_value")
+    ax.bar(x - width/2, agg["mean"], width, label="Średnia najlepszego rozwiązania")
+    ax.bar(x + width/2, agg["max"], width, label="Najlepsze rozwiązanie")
 
     ax.set_title(f"Wpływ parametru {param} na wyniki algorytmu")
-    ax.set_ylabel("Wartość best_value")
+    ax.set_ylabel("Wartość najlepszego rozwiązania")
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
-    ax.legend()
+    ax.legend(prop={'size': 6})
     plt.tight_layout()
     plt.show()
 
+def plot_time_by_method(df_summary: pd.DataFrame):
+    # etykieta: kombinacja selekcji i krzyżowania
+    df_summary["method"] = df_summary["selection"] + " " + df_summary["crossover"]
 
+    # uśrednienie po wszystkich runach i parametrach
+    agg = df_summary.groupby("method")["time"].mean().sort_values()
 
-def plot_method_comparison(df_summary: pd.DataFrame, param: str):
-    plt.figure(figsize=(10, 6))
-    groups = df_summary.groupby(param)["best_value"].mean()
-    groups.plot(kind="bar")
+    labels = agg.index
+    x = np.arange(len(labels))
 
-    plt.title(f"Porównanie metod: {param}")
-    plt.ylabel("Średni best_value")
+    plt.figure(figsize=(12, 6))
+    plt.bar(x, agg.values)
+
+    plt.title("Średni czas wykonania dla metod selekcji i krzyżowania")
+    plt.ylabel("Czas [s]")
+    plt.xticks(x, labels)
     plt.tight_layout()
     plt.show()
 
@@ -120,8 +112,8 @@ if __name__ == "__main__":
     print("Wczytywanie summary...")
     df_summary = load_summary(summary_path)
 
-    print("Rysowanie konwergencji...")
-    plot_convergence(df_hist)
+    print("Rysowanie zmian wartości w czasie...")
+    plot_result_change_with_generations(df_hist)
 
     print("Porównanie Pc...")
     plot_param_effect(df_summary, "Pc")
@@ -133,7 +125,10 @@ if __name__ == "__main__":
     plot_param_effect(df_summary, "N")
 
     print("Porównanie metod selekcji...")
-    plot_method_comparison(df_summary, "selection")
+    plot_param_effect(df_summary, "selection")
 
     print("Porównanie metod krzyżowania...")
-    plot_method_comparison(df_summary, "crossover")
+    plot_param_effect(df_summary, "crossover")
+
+    print("Rysowanie czasu wykonania metod...")
+    plot_time_by_method(df_summary)

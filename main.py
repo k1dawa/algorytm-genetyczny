@@ -3,7 +3,6 @@ import itertools
 from random import Random, randint, uniform, sample
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from statistics import mean, median, stdev
 
 BACKPACK_CSV = "problem plecakowy dane CSV tabulatory.csv"
@@ -25,29 +24,26 @@ def fitness(individual, backpack_df, capacity):
             total_weight += int(backpack_df["Waga (kg)"][i].replace(" ", ""))
             if total_weight > capacity:
                 return 0
-    # zostawiam jak największe wartości obiektów w plecaku
     return total_value
 
 # Generowanie populacji
-def generate_population(pop_size, n_genes, rand: Random):
+def generate_population(pop_size, n_genes, rand: Random, backpack_df, capacity):
     population = []
-    for _ in range(pop_size):
-        random_individual = [1 if rand.random() < 0.50 else 0 for _ in range(n_genes)]
-        population.append(random_individual)
+    while len(population) != pop_size:
+        random_individual = [1 if rand.random() < 0.5 else 0 for _ in range(n_genes)]
+        fitness_value = fitness(random_individual, backpack_df, capacity)
+        if fitness_value != 0 and fitness_value not in population:
+            population.append(random_individual)
     return population
 
 # Selekcja ruletkowa
 def selection_roulette(population, backpack_df, capacity, rand: Random, num_of_chosen=1):
-    # przystosowania dla każdego osobnika
     fitnesses = [fitness(ind, backpack_df, capacity) for ind in population]
-    # suma przystosowań dla wyznaczenia przedziałów
     total = sum(fitnesses)
     if total == 0:
-        # wszyscy mają 0 - wybieramy losowo
         return [population[rand.randint(0, len(population)-1)] for _ in range(num_of_chosen)]
     chosen = []
     for _ in range(num_of_chosen):
-        # wybór punktu w kole ruletki
         pick = rand.uniform(0, total)
         current = 0
         for ind, f in zip(population, fitnesses):
@@ -63,9 +59,7 @@ def selection_tournament(population, backpack_df, capacity, rand: Random, num_of
     pop_size = len(population)
 
     for _ in range(num_of_chosen):
-        # losujemy grupę turniejową bez powtórzeń
         group = rand.sample(population, min(group_size, pop_size))
-        # wybieramy najlepszego
         best = max(group, key=lambda ind: fitness(ind, backpack_df, capacity))
         winners.append(best)
     return winners
@@ -82,7 +76,7 @@ def crossover_two_point(p1, p2, rand: Random):
     n = len(p1)
     if n < 3:
         return crossover_one_point(p1, p2, rand)
-    a = rand.randint(1, int(n/2)-1)
+    a = rand.randint(1, n-2)
     b = rand.randint(a+1, n-1)
     c1 = p1[:a] + p2[a:b] + p1[b:]
     c2 = p2[:a] + p1[a:b] + p2[b:]
@@ -110,8 +104,9 @@ def evaluate_population(population, backpack_df, capacity):
 # na eksperyment składa się 5 uruchomień z tymi samymi parametrami
 def evolve(pop_size, n_genes, backpack_df, capacity, rand,
            T, Pc, Pm,
-           selection_fn, cross_fn, mutation_fn):
-    population = generate_population(pop_size, n_genes, rand)
+           selection_fn, cross_fn, mutation_fn,
+           elitism = True):
+    population = generate_population(pop_size, n_genes, rand, backpack_df, capacity)
     run_stats = []  # lista słowników z info per iteracja
 
     for gen in range(T):
@@ -126,7 +121,7 @@ def evolve(pop_size, n_genes, backpack_df, capacity, rand,
         new_pop = []
         # dobieranie aż do wielkości populacji
         while len(new_pop) < pop_size:
-            parents = selection_fn(population, backpack_df, capacity, rand, num_of_chosen=2)
+            parents = selection_fn(population, backpack_df, capacity, rand, k=2)
             p1, p2 = parents[0][:], parents[1][:]
             # krzyżowanie z prawdopodobieństwem Pc
             if rand.random() < Pc:
@@ -148,7 +143,6 @@ def evolve(pop_size, n_genes, backpack_df, capacity, rand,
         "final_best_ind": final_stats["best_ind"],
         "final_best_val": final_stats["best_val"],
         "final_worst_val": final_stats["worst_val"],
-        "final_mean": final_stats["mean"],
         "history": run_stats
     }
 
@@ -198,19 +192,18 @@ def run_experiments(backpack_csv, out_prefix,
             res = evolve(pop_size=N, n_genes=n_genes,
                          backpack_df=df, capacity=BACKPACK_CAPACITY,
                          rand=rand, T=T, Pc=Pc, Pm=Pm,
-                         selection_fn=sel_fn, cross_fn=cross_fn, mutation_fn=mut_fn)
+                         selection_fn=sel_fn, cross_fn=cross_fn, mutation_fn=mut_fn,
+                         elitism=True)
             elapsed = time.time() - start
             times.append(elapsed)
             best_vals.append(res["final_best_val"])
 
             # zapisz historię runu do CSV
             hist_df = pd.DataFrame(res["history"])
-            hist_csv = f"{out_prefix}_Pc{Pc}_Pm{Pm}_N{N}_sel{sel_name}_cross{cross_name}_run{r+1}.csv"
+            hist_csv = f"{out_prefix}_hist_Pc{Pc}_Pm{Pm}_N{N}_sel{sel_name}_cross{cross_name}_run{r+1}.csv"
             hist_df.to_csv(hist_csv, index=False)
 
             # dodatkowy zapis - najlepsze rozwiązanie i jego przedmioty
-            best_ind = res["final_best_ind"]
-            items = [i+1 for i,g in enumerate(best_ind) if g==1]  # numeracja 1-based
             summary_rows.append({
                 "run_id": run_id,
                 "Pc": Pc,
@@ -223,7 +216,7 @@ def run_experiments(backpack_csv, out_prefix,
                 "best_value": res["final_best_val"],
                 "best_mean": res["final_mean"],
                 "worst_value": res["final_worst_val"],
-                "time_s": elapsed
+                "time": elapsed
             })
 
         # statystyki dla kombinacji parametrów
@@ -235,21 +228,23 @@ def run_experiments(backpack_csv, out_prefix,
             "best_median": float(median(best_vals)),
             "best_min": float(min(best_vals)),
             "best_max": float(max(best_vals)),
-            "best_stdev": float(stdev(best_vals)) if repeats > 1 else 0.0,
             "time_mean_s": float(mean(times))
         }
-        print("Done dla uruchomienia:", summary_stat)
+        print("Dane dla uruchomienia:", summary_stat)
 
     summary_df = pd.DataFrame(summary_rows)
     summary_df.to_csv(f"{out_prefix}_runs_summary.csv", index=False)
-    print("Wszystkie eksperymenty się wykonały i zostały zapisane w pliku z podsumowaniem.")
+    print("Wszystkie eksperymenty zakończone. Podsumowanie zapisane.")
 
 
 if __name__ == "__main__":
-    Pc_list = [0.6, 1.0]
-    Pm_list = [0.01, 0.1]
-    N_list = [50, 200]
-    T = 500
+    # Pc_list = [0.6, 0.8, 1.0]
+    # Pm_list = [0.01, 0.05, 0.1]
+    # N_list = [50, 100, 200]
+    Pc_list = [0.6, 0.8]
+    Pm_list = [0.01, 0.05]
+    N_list = [50]
+    T = 100
 
     selection_methods = ["roulette", "tournament"]
     crossover_methods = ["one_point", "two_point"]
